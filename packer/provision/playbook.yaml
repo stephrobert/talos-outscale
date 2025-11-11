@@ -1,0 +1,88 @@
+---
+- name: Prepare Talos image on BSU volume
+  hosts: all
+  become: true
+  vars:
+    talos_version: "v1.11.5"
+    talos_dir: /opt/talos
+    talos_xz: "{{ talos_dir }}/aws-amd64.raw.xz"
+    talos_raw: "{{ talos_dir }}/aws-amd64.raw"
+    target_device: /dev/xvdf
+
+  tasks:
+    - name: Ensure work dir
+      ansible.builtin.file:
+        path: "{{ talos_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Submit schematic to Talos Image Factory
+      ansible.builtin.uri:
+        url: https://factory.talos.dev/schematics
+        method: POST
+        body: "{{ lookup('file', playbook_dir + '/schematic.yaml') }}"
+        headers:
+          Content-Type: application/yaml
+        return_content: true
+        status_code: 201
+      register: schematic_response
+      delegate_to: localhost
+      become: false
+
+    - name: Extract schematic ID from response
+      ansible.builtin.set_fact:
+        schematic_id: "{{ schematic_response.json.id }}"
+
+    - name: Display schematic ID
+      ansible.builtin.debug:
+        msg: "Schematic ID: {{ schematic_id }}"
+
+    - name: Download Talos image from Image Factory (aws-amd64.raw.xz)
+      ansible.builtin.get_url:
+        url: "https://factory.talos.dev/image/{{ schematic_id }}/{{ talos_version }}/aws-amd64.raw.xz"
+        dest: "{{ talos_xz }}"
+        mode: "0644"
+        force: true
+        timeout: 600
+
+    - name: Install xz if needed
+      ansible.builtin.package:
+        name: xz
+        state: present
+
+    - name: Decompress xz to raw (keeps .xz)
+      ansible.builtin.command:
+        cmd: "xz -d -k {{ talos_xz }}"
+        creates: "{{ talos_raw }}"
+
+    - name: Zero the target device partition table (safety)
+      ansible.builtin.command:
+        cmd: "sgdisk --zap-all {{ target_device }}"
+      changed_when: false
+      failed_when: false
+      register: zap_result
+      ignore_errors: true
+
+    - name: Write raw image to BSU volume
+      ansible.builtin.command:
+        cmd: "dd if={{ talos_raw }} of={{ target_device }} bs=8M oflag=direct status=progress"
+
+    - name: Flush caches (sync)
+      ansible.builtin.command:
+        cmd: "sync"
+
+    - name: Udev settle
+      ansible.builtin.command:
+        cmd: "udevadm settle"
+      changed_when: false
+      failed_when: false
+
+    - name: Show resulting partition table (debug)
+      ansible.builtin.command:
+        cmd: "parted -s {{ target_device }} print"
+      register: parted_print
+      changed_when: false
+
+    - name: Debug parted output
+      ansible.builtin.debug:
+        var: parted_print.stdout
