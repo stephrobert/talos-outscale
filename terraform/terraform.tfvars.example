@@ -1,0 +1,58 @@
+# Configuration Terraform pour cluster Talos Production sur Outscale
+# Copiez ce fichier en terraform.tfvars et ajustez les valeurs
+
+# Région Outscale
+region = "eu-west-2"
+
+# Nom du cluster
+cluster_name = "talos-prod"
+
+# Environnement
+environment = "production"
+
+# Image Talos (laisser vide pour auto-détection)
+# Ou spécifier l'ID de votre OMI Talos
+talos_image_id = ""  # ex: "ami-xxxxxxxx"
+
+# Version Talos
+talos_version = "v1.10.6"
+
+# Configuration Control Plane
+control_plane_count    = 3
+control_plane_vm_type  = "tinav5.c4r8p1"  # 4 vCPU, 8GB RAM
+control_plane_disk_size = 50               # GB
+
+# Configuration Workers
+worker_count    = 3
+worker_vm_type  = "tinav5.c4r16p1"  # 4 vCPU, 16GB RAM
+worker_disk_size = 100               # GB
+
+# Configuration Bastion
+bastion_vm_type = "tinav5.c1r2p1"  # 1 vCPU, 2GB RAM
+bastion_image_id = ""              # Laisser vide pour Ubuntu 22.04 auto-détecté
+
+# Sécurité - IP autorisée pour SSH au bastion
+# Laisser vide pour auto-détection de votre IP
+bastion_allowed_ssh_cidr = ""  # ex: "1.2.3.4/32"
+
+# Load Balancer (internal recommandé pour production)
+lb_type = "internal"
+
+# Haute disponibilité
+enable_multi_az = true
+availability_zones = ["a", "b", "c"]
+
+# Monitoring
+enable_monitoring = true
+enable_detailed_monitoring = false
+
+# Backups
+enable_snapshots = true
+snapshot_retention_days = 7
+
+# Tags additionnels
+additional_tags = {
+  Project = "Kubernetes"
+  Owner   = "Platform Team"
+  CostCenter = "Engineering"
+}
