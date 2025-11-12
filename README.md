@@ -24,13 +24,11 @@ Ce projet construis une infrastructure complète pour exécuter Kubernetes sur O
     * [Outils requis](#outils-requis)
     * [Credentials Outscale](#credentials-outscale)
     * [Versions testées](#versions-testées)
-  * [🚀 Installation](#-installation)
+  * [🚀 Démarrage rapide](#-démarrage-rapide)
     * [1. Configuration des credentials](#1-configuration-des-credentials)
     * [2. Création de l'image OMI Talos](#2-création-de-limage-omi-talos)
-      * [Option A : Avec Packer (recommandé)](#option-a--avec-packer-recommandé)
     * [3. Déploiement de l'infrastructure](#3-déploiement-de-linfrastructure)
-    * [4. Bootstrap du cluster Kubernetes](#4-bootstrap-du-cluster-kubernetes)
-    * [5. Installation du CNI Cilium](#5-installation-du-cni-cilium)
+    * [4. Déploiement du cluster Kubernetes](#4-déploiement-du-cluster-kubernetes)
   * [📁 Structure du projet](#-structure-du-projet)
   * [📚 Documentation](#-documentation)
   * [🤝 Contribution](#-contribution)
@@ -149,7 +147,7 @@ Vous aurez besoin de credentials Outscale :
 | Terraform | v1.9+ |
 | Packer | v1.11+ |
 
-## 🚀 Installation
+## 🚀 Démarrage rapide
 
 ### 1. Configuration des credentials
 
@@ -192,8 +190,6 @@ direnv allow
 
 L'image OMI personnalisée inclut les optimisations pour Outscale.
 
-#### Option A : Avec Packer (recommandé)
-
 ```bash
 cd packer
 
@@ -207,15 +203,6 @@ packer validate -var="talos_version=v1.11.3" -var="source_omi=ami-0fb6a6b2" .
 packer build -var="talos_version=v1.11.3" -var="source_omi=ami-0fb6a6b2" .
 ```
 
-Le processus :
-
-1. Crée une VM temporaire
-2. Soumet le schematic Talos à l'Image Factory
-3. Télécharge l'image personnalisée
-4. Écrit l'image sur un volume BSU
-5. Crée un snapshot puis une OMI
-6. Nettoie les ressources temporaires
-
 L'OMI créée aura un nom comme : `Talos-Outscale-v1.11.3-20251111-081824`
 
 ### 3. Déploiement de l'infrastructure
@@ -226,32 +213,9 @@ cd terraform-production
 # Copier le fichier d'exemple de variables
 cp terraform.tfvars.example terraform.tfvars
 
-# Éditer avec vos paramètres
+# Éditer avec vos paramètres (notamment l'OMI ID créé précédemment)
 vim terraform.tfvars
-```
 
-Variables importantes :
-
-```hcl
-# ID de l'OMI Talos créée précédemment
-talos_omi_id = "ami-xxxxxxxx"
-
-# Type d'instance pour les control-planes
-controlplane_vm_type = "tinav6.c4r8p2"
-
-# Type d'instance pour les workers
-worker_vm_type = "tinav6.c4r8p2"
-
-# Nombre de workers
-worker_count = 2
-
-# CIDR autorisé pour l'accès bastion (votre IP publique)
-bastion_allowed_ssh_cidr = "203.0.113.0/32"
-```
-
-Déployer l'infrastructure :
-
-```bash
 # Initialiser Terraform
 terraform init
 
@@ -262,131 +226,25 @@ terraform plan
 terraform apply
 ```
 
-Récupérez les outputs Terraform :
+### 4. Déploiement du cluster Kubernetes
 
-```bash
-# Endpoint du Load Balancer
-terraform output kubernetes_api_endpoint
+Pour le bootstrap du cluster Kubernetes et l'installation de Cilium, consultez le **guide complet de déploiement** :
 
-# IPs des control-planes
-terraform output controlplane_ips
+📖 **[Guide de déploiement Talos sur Outscale](https://blog.stephane-robert.info/docs/cloud/outscale/kubernetes-talos/)**
 
-# IPs des workers
-terraform output worker_ips
-```
+Ce guide détaille :
 
-### 4. Bootstrap du cluster Kubernetes
+- La génération des configurations Talos
+- Le bootstrap du cluster etcd
+- L'installation et la configuration de Cilium CNI
+- Les tests de connectivité
+- Le troubleshooting
 
-Connectez-vous au bastion (ou depuis votre poste si vous avez la connectivité) :
-
-```bash
-# Variables d'environnement
-export CLUSTER_NAME="talos-prod"
-export KUBE_LBU="internal-talos-prod-k8s-lb-XXXXXXXXX.eu-west-2.lbu.outscale.com"
-
-# Générer les configurations Talos
-talosctl gen config "$CLUSTER_NAME" "https://$KUBE_LBU:6443" \
-  --output-dir ./_out \
-  --additional-sans "$KUBE_LBU" \
-  --config-patch @cilium-patch.yaml
-
-# Configurer talosctl
-talosctl --talosconfig ./_out/talosconfig config endpoint 10.0.1.10 10.0.2.11 10.0.3.12
-talosctl --talosconfig ./_out/talosconfig config node 10.0.1.10 10.0.2.11 10.0.3.12
-
-# Appliquer la config aux control-planes
-talosctl --talosconfig ./_out/talosconfig \
-  --nodes 10.0.1.10,10.0.2.11,10.0.3.12 \
-  apply-config --insecure \
-  --file ./_out/controlplane.yaml
-
-# Attendre 2 minutes que les nœuds redémarrent
-
-# Bootstrap etcd (une seule fois sur le premier nœud)
-talosctl --talosconfig ./_out/talosconfig \
-  --nodes 10.0.1.10 \
-  --endpoints 10.0.1.10 \
-  bootstrap
-
-# Appliquer la config aux workers
-talosctl --talosconfig ./_out/talosconfig apply-config --insecure \
-  --nodes 10.0.1.20 --file ./_out/worker.yaml
-
-talosctl --talosconfig ./_out/talosconfig apply-config --insecure \
-  --nodes 10.0.2.21 --file ./_out/worker.yaml
-```
-
-Récupérer le kubeconfig :
-
-```bash
-talosctl --talosconfig ./_out/talosconfig \
-  --nodes 10.0.1.10 \
-  --endpoints 10.0.1.10 \
-  kubeconfig ./_out/kubeconfig --force
-
-export KUBECONFIG=$(pwd)/_out/kubeconfig
-kubectl get nodes
-```
-
-Les nœuds apparaissent `NotReady` car le CNI n'est pas encore installé.
-
-### 5. Installation du CNI Cilium
-
-```bash
-# Ajouter le repo Helm Cilium
-helm repo add cilium https://helm.cilium.io/
-helm repo update
-
-# Installer Cilium avec les paramètres optimisés pour Talos (en cours d'écriture)
-helm upgrade --install cilium cilium/cilium \
-  --namespace kube-system \
-  --set kubeProxyReplacement=true \
-  --set kubeProxyReplacementHealthzBindAddr=0.0.0.0:10256 \
-  --set k8sServiceHost=$KUBE_LBU \
-  --set k8sServicePort=6443 \
-  --set ipam.mode=kubernetes \
-  --set routingMode=native \
-  --set ipv4NativeRoutingCIDR=10.244.0.0/16 \
-  --set autoDirectNodeRoutes=true \
-  --set operator.replicas=1 \
-  --set securityContext.privileged=true \
-  --set mountBPFFs=true \
-  --set bpf.hostRouting=true \
-  --set bpf.autoMount.enabled=false \
-  --set bpffs.enabled=false \
-  --set cgroup.autoMount.enabled=false \
-  --set cgroup.hostRoot=/sys/fs/cgroup \
-  --set nodeinit.enabled=false \
-  --set sysctl=false \
-  --set cleanState=false \
-  --set mtu=9001
-
-# Vérifier le déploiement
-kubectl -n kube-system get pods -l k8s-app=cilium
-
-# Vérifier le statut Cilium
-kubectl -n kube-system exec -it ds/cilium -- cilium status
-
-# Les nœuds doivent maintenant être Ready
-kubectl get nodes
-```
-
-Résultat attendu :
-
-```bash
-NAME            STATUS   ROLES           AGE   VERSION
-talos-cp-1      Ready    control-plane   15m   v1.31.1
-talos-cp-2      Ready    control-plane   12m   v1.31.1
-talos-cp-3      Ready    control-plane   12m   v1.31.1
-talos-worker-1  Ready    <none>          8m    v1.31.1
-talos-worker-2  Ready    <none>          8m    v1.31.1
-```
-
-🎉 **Votre cluster Kubernetes Talos est opérationnel !**
+🎉 **Votre cluster Kubernetes Talos sera opérationnel !**
 
 ## 📁 Structure du projet
 
-```
+```text
 .
 ├── README.md                      # Ce fichier
 ├── docs.mdx                       # Documentation complète
@@ -419,7 +277,7 @@ talos-worker-2  Ready    <none>          8m    v1.31.1
 - **Talos officiel** : https://www.talos.dev/
 - **Cilium** : https://docs.cilium.io/
 - **Terraform Outscale** : https://registry.terraform.io/providers/outscale/outscale/
-- **Article de blog** : https://blog.stephane-robert.info/docs/cloud/outscale/cluster-kubernetes-talos/
+- **Article de blog** : https://blog.stephane-robert.info/docs/cloud/outscale/kubernetes-talos/
 
 ## 🤝 Contribution
 
