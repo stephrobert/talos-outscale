@@ -1,0 +1,14 @@
+# Credentials Outscale
+export OSC_ACCESS_KEY="YOUR_ACCESS_KEY_HERE"
+export OSC_SECRET_KEY="YOUR_SECRET_KEY_HERE"
+export OSC_REGION="eu-west-2"
+
+# Pour Terraform
+export TF_VAR_access_key_id="$OSC_ACCESS_KEY"
+export TF_VAR_secret_key_id="$OSC_SECRET_KEY"
+
+# IP autorisée pour SSH
+# export TF_VAR_bastion_allowed_ssh_cidr="XXX.XXX.XXX.XXX/32"
+
+export PACKER_LOG=1
+export PACKER_LOG_PATH="./packer.log"
