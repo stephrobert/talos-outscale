@@ -1,0 +1,68 @@
+# Images QCOW2
+*.qcow2
+*.raw
+*.raw.xz
+*.img
+
+# Répertoire de sortie des images
+/images/
+/tmp/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+crash.log
+
+# Talos
+_out/
+talosconfig
+*.kubeconfig
+
+# Snapshots Outscale
+snap-*.qcow2
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Credentials
+.osc/
+.aws/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+ENV/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.envrc
