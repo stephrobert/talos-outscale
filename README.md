@@ -2,7 +2,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Talos](https://img.shields.io/badge/Talos-v1.11.3-blue.svg)](https://www.talos.dev/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.31-blue.svg)](https://kubernetes.io/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.34-blue.svg)](https://kubernetes.io/)
 
 Déploiement automatisé d'un cluster Kubernetes hautement disponible avec **Talos Linux** sur le cloud **Outscale**.
 
