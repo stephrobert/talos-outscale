@@ -10,8 +10,11 @@ Ce projet construis une infrastructure complète pour exécuter Kubernetes sur O
 
 - **Talos Linux** : OS immuable et API-driven pour Kubernetes
 - **Terraform** : Infrastructure as Code pour le provisioning
-- **Packer** : Automatisation de la création d'images OMI personnalisées
+- **Packer** : Automatisation de la création d'images OMI personnalisées (standard et GPU)
 - **Cilium** : CNI moderne basé sur eBPF avec kube-proxy replacement
+- **Support GPU** : Workers GPU avec drivers NVIDIA pour workloads d'IA/ML
+- **CSI Driver** : Stockage persistant avec volumes BSU Outscale
+- **Cloud Controller Manager** : Intégration native avec Load Balancers Outscale
 
 ## 📋 Table des matières
 
@@ -22,15 +25,22 @@ Ce projet construis une infrastructure complète pour exécuter Kubernetes sur O
     * [Composants](#composants)
   * [🔧 Prérequis](#-prérequis)
     * [Outils requis](#outils-requis)
-    * [Credentials Outscale](#credentials-outscale)
+    * [Sur votre poste de travail](#sur-votre-poste-de-travail)
+    * [Sur le bastion](#sur-le-bastion)
     * [Versions testées](#versions-testées)
   * [🚀 Démarrage rapide](#-démarrage-rapide)
     * [1. Configuration des credentials](#1-configuration-des-credentials)
-    * [2. Création de l'image OMI Talos](#2-création-de-limage-omi-talos)
+    * [2. Création des OMI Talos](#2-création-des-omi-talos)
+      * [Image Talos Standard](#image-talos-standard)
+      * [Image Talos GPU (optionnel)](#image-talos-gpu-optionnel)
     * [3. Déploiement de l'infrastructure](#3-déploiement-de-linfrastructure)
     * [4. Déploiement du cluster Kubernetes](#4-déploiement-du-cluster-kubernetes)
   * [📁 Structure du projet](#-structure-du-projet)
   * [📚 Documentation](#-documentation)
+    * [Fonctionnalités principales](#fonctionnalités-principales)
+      * [Support GPU NVIDIA](#support-gpu-nvidia)
+      * [CSI Driver Outscale](#csi-driver-outscale)
+      * [Cloud Controller Manager](#cloud-controller-manager)
   * [🤝 Contribution](#-contribution)
     * [Guidelines](#guidelines)
   * [📝 Licence](#-licence)
@@ -43,27 +53,42 @@ Ce projet construis une infrastructure complète pour exécuter Kubernetes sur O
 L'infrastructure repose sur une architecture multi-AZ hautement disponible :
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    Outscale Cloud (eu-west-2)                        │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────────┐  │
-│  │ Net Cluster Kubernetes (10.0.0.0/16)                           │  │
-│  │                                                                │  │
-│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │  │
-│  │  │ AZ-1 (10.0.1/24) │  │ AZ-2 (10.0.2/24) │  │ AZ-3 (.3/24) │  │  │
-│  │  ├──────────────────┤  ├──────────────────┤  ├──────────────┤  │  │
-│  │  │ CP-1: .1.10      │  │ CP-2: .2.11      │  │ CP-3: .3.12  │  │  │
-│  │  │ Worker-1: .1.20  │  │ Worker-2: .2.21  │  │              │  │  │
-│  │  └──────────────────┘  └──────────────────┘  └──────────────┘  │  │
-│  │                                                                │  │
-│  │  Load Balancer Internal                                        │  │
-│  │  ├─> 10.0.1.10:6443 (talos-cp-1)                               │  │
-│  │  ├─> 10.0.2.11:6443 (talos-cp-2)                               │  │
-│  │  └─> 10.0.3.12:6443 (talos-cp-3)                               │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                         Outscale Cloud (eu-west-2)                                   │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  ┌────────── Net Bastion (10.100.0.0/16) ──────────┐                                 │
+│  │                                                 │                                 │
+│  │  Bastion (10.100.1.10)                          │                                 │
+│  │  ├─ SSH Access (Port 22)                        │                                 │
+│  │  ├─ kubectl, talosctl, helm                     │                                 │
+│  │  └─ VPC Peering ────────────────────────────────┼─────────┐                       │
+│  └─────────────────────────────────────────────────┘         │                       │
+│                                                              ▼                       │
+│  ┌────────────────── Net Cluster Kubernetes (10.0.0.0/16) ────────────────────────┐  │
+│  │                                                                                │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐              │  │
+│  │  │  AZ-A (.1.0/24)  │  │  AZ-B (.2.0/24)  │  │  AZ-C (.3.0/24)  │              │  │
+│  │  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤              │  │
+│  │  │ CP-1: .1.10      │  │ CP-2: .2.11      │  │ CP-3: .3.12      │              │  │
+│  │  │ Worker-1: .1.20  │  │ Worker-2: .2.21  │  │ Worker-3: .3.22  │              │  │
+│  │  │ GPU-1: .1.30     │  │                  │  │                  │              │  │
+│  │  └──────────────────┘  └──────────────────┘  └──────────────────┘              │  │
+│  │                                                                                │  │
+│  │  ┌─────────── NAT Subnet (.254.0/24) ──────────┐                               │  │
+│  │  │  NAT Gateway (Public IP)                    │  → Internet                   │  │
+│  │  └─────────────────────────────────────────────┘                               │  │
+│  │                                                                                │  │
+│  │  ┌───────── Load Balancer (Internal) ──────────┐                               │  │
+│  │  │  Kubernetes API (Port 6443)                 │                               │  │
+│  │  │  ├─> 10.0.1.10:6443 (CP-1)                  │                               │  │
+│  │  │  ├─> 10.0.2.11:6443 (CP-2)                  │                               │  │
+│  │  │  └─> 10.0.3.12:6443 (CP-3)                  │                               │  │
+│  │  └─────────────────────────────────────────────┘                               │  │
+│  │                                                                                │  │
+│  └────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Composants
@@ -89,9 +114,19 @@ L'infrastructure repose sur une architecture multi-AZ hautement disponible :
 - Type : Configurable selon les charges applicatives
 - Rôles : Hébergement des workloads Kubernetes
 
+**Workers GPU (optionnels)**
+
+- Distribution : Zones de disponibilité configurables
+- Type : `tinav6.c8r16p1` ou supérieur (avec line GPU)
+- Image : OMI Talos personnalisée avec drivers NVIDIA
+- Extensions : nvidia-open-gpu-kernel-modules, nvidia-container-toolkit, nvidia-fabricmanager
+- Drivers : NVIDIA 570.x (production)
+- Support : GPU simple, multi-GPU, et systèmes HGX avec NVLink
+- Rôles : Workloads IA/ML, calcul scientifique, training de modèles
+
 **Stockage**
 
-- Type : BSU volumes (gp2)
+- Type : BSU volumes (gp2, io1, standard)
 - Taille : Configurable par nœud
 - Persistence : DeleteOnVmDeletion configurable
 
@@ -99,7 +134,9 @@ L'infrastructure repose sur une architecture multi-AZ hautement disponible :
 
 ### Outils requis
 
-Sur votre poste de travail ou bastion :
+Sur votre poste de travail et le bastion :
+
+### Sur votre poste de travail
 
 ```bash
 # Terraform (>= 1.0)
@@ -108,42 +145,30 @@ terraform version
 # Packer (>= 1.9)
 packer version
 
-# talosctl (même version que Talos)
+# osc-cli (CLI Outscale)
+osc-cli --version
+```
+
+### Sur le bastion
+
+```bash
+# talosctl (même version que les images Talos)
 talosctl version
 
 # kubectl
 kubectl version --client
 
-# helm (optionnel, pour Cilium)
+# helm
 helm version
-
-# AWS CLI (pour Object Storage Outscale)
-aws --version
-
-# osc-cli (CLI Outscale)
-osc-cli --version
-
-# Utilitaires image
-qemu-img --version
 ```
-
-### Credentials Outscale
-
-Vous aurez besoin de credentials Outscale :
-
-- Gestion des Nets, Subnets, Routes
-- Création de VMs et volumes BSU
-- Création d'OMI et snapshots
-- Accès à l'Object Storage (OSU)
-- Gestion des Security Groups et Load Balancers
 
 ### Versions testées
 
 | Composant | Version |
 |-----------|---------|
-| Talos Linux | v1.11.3 |
-| Kubernetes | v1.31.1 |
-| Cilium | v1.16+ |
+| Talos Linux | v1.11.5 |
+| Kubernetes | v1.34.1 |
+| Cilium | v1.18.4 |
 | Terraform | v1.9+ |
 | Packer | v1.11+ |
 
@@ -186,34 +211,69 @@ source .envrc
 direnv allow
 ```
 
-### 2. Création de l'image OMI Talos
+### 2. Création des OMI Talos
 
-L'image OMI personnalisée inclut les optimisations pour Outscale.
+Le projet supporte deux types d'images :
+
+#### Image Talos Standard
+
+Pour les nœuds sans GPU (control planes et workers CPU) :
 
 ```bash
 cd packer
 
+# Copier et éditer les variables
+cp variables.auto.pkrvars.hcl.example variables.auto.pkrvars.hcl
+vim variables.auto.pkrvars.hcl
+
 # Initialiser Packer
-packer init .
+packer init talos-outscale.pkr.hcl
 
 # Valider la configuration
-packer validate -var="talos_version=v1.11.3" -var="source_omi=ami-0fb6a6b2" .
+packer validate talos-outscale.pkr.hcl
 
-# Build de l'OMI
-packer build -var="talos_version=v1.11.3" -var="source_omi=ami-0fb6a6b2" .
+# Build de l'OMI standard
+packer build talos-outscale.pkr.hcl
 ```
 
-L'OMI créée aura un nom comme : `Talos-Outscale-v1.11.3-20251111-081824`
+#### Image Talos GPU (optionnel)
+
+Pour les workers GPU avec drivers NVIDIA intégrés :
+
+```bash
+cd packer
+
+# Initialiser si pas encore fait
+packer init talos-gpu-outscale.pkr.hcl
+
+# Valider la configuration GPU
+packer validate talos-gpu-outscale.pkr.hcl
+
+# Build de l'OMI GPU (type universal recommandé)
+packer build talos-gpu-outscale.pkr.hcl
+```
+
+**Types d'images GPU disponibles :**
+
+- **universal** (par défaut) : Inclut `nvidia-fabricmanager` pour support NVLink/HGX (H100, A100)
+
+Les images créées auront des noms comme :
+
+- Standard : `Talos-v1.11.5-20251126-093750`
+- GPU : `Talos-GPU-universal-v1.11.5-20251126-100029`
 
 ### 3. Déploiement de l'infrastructure
 
 ```bash
-cd terraform-production
+cd terraform
 
 # Copier le fichier d'exemple de variables
 cp terraform.tfvars.example terraform.tfvars
 
-# Éditer avec vos paramètres (notamment l'OMI ID créé précédemment)
+# Éditer avec vos paramètres
+# - Mettre l'OMI ID standard créée précédemment
+# - Configurer le nombre de workers GPU (gpu_worker_count)
+
 vim terraform.tfvars
 
 # Initialiser Terraform
@@ -225,6 +285,16 @@ terraform plan
 # Appliquer
 terraform apply
 ```
+
+**Configuration GPU dans Terraform :**
+
+Variables disponibles pour les workers GPU :
+
+- `gpu_worker_count` : Nombre de workers GPU (défaut: 0)
+- `gpu_worker_vm_type` : Type de VM avec GPU (ex: `tinav6.c8r16p1`)
+- `gpu_worker_disk_size` : Taille du disque en GB (défaut: 200)
+- `gpu_worker_availability_zones` : Liste des AZ pour GPU (ex: `["a"]`)
+- `talos_gpu_image_id` : ID de l'OMI GPU créée avec Packer
 
 ### 4. Déploiement du cluster Kubernetes
 
@@ -247,37 +317,90 @@ Ce guide détaille :
 ```text
 .
 ├── README.md                      # Ce fichier
-├── docs.mdx                       # Documentation complète
+├── docs/
+│   └── PROCEDURE-IMAGE-TALOS-GPU.md  # Guide détaillé création images GPU
 ├── .envrc.sample                  # Template de credentials
 ├── cilium-patch.yaml              # Patch Talos pour désactiver kube-proxy
 ├── packer/
-│   ├── talos-outscale.pkr.hcl    # Configuration Packer
+│   ├── talos-outscale.pkr.hcl        # Configuration Packer image standard
+│   ├── talos-gpu-outscale.pkr.hcl    # Configuration Packer image GPU
+│   ├── variables.auto.pkrvars.hcl.example  # Variables Packer
+│   ├── manifest.json                 # Manifest build image standard
+│   ├── manifest-gpu-universal.json   # Manifest build image GPU
 │   └── provision/
-│       ├── playbook.yaml          # Playbook Ansible pour provisionner l'image
-│       └── schematic.yaml         # Schematic Talos (customizations kernel)
-├── terraform-production/
+│       ├── playbook.yaml          # Playbook Ansible image standard
+│       ├── playbook-gpu.yaml      # Playbook Ansible image GPU
+│       └── schematic.yaml         # Schematic Talos (extensions)
+├── terraform/
 │   ├── main.tf                    # Configuration Terraform principale
-│   ├── variables.tf               # Variables d'entrée
-│   ├── outputs.tf                 # Outputs exposés
-│   ├── network.tf                 # Configuration réseau (Nets, Subnets, Routes)
-│   ├── compute.tf                 # VMs Talos (control-planes et workers)
+│   ├── variables.tf               # Variables (inclut GPU)
+│   ├── outputs.tf                 # Outputs (inclut GPU workers)
+│   ├── network.tf                 # Configuration réseau
+│   ├── compute.tf                 # VMs Talos (CP, workers, GPU workers)
 │   ├── security_groups.tf         # Security Groups
-│   ├── load_balancer.tf           # Load Balancer pour l'API Kubernetes
+│   ├── load_balancer.tf           # Load Balancer API Kubernetes
 │   ├── keypair.tf                 # Paire de clés SSH
-│   └── terraform.tfvars.example   # Exemple de variables
-└── _out/                          # Outputs générés (talosconfig, kubeconfig)
+│   ├── terraform.tfvars.example   # Exemple de variables
+│   ├── deploy-cluster.sh          # Script automatisé déploiement complet
+│   ├── generate-talos-config.sh   # Script génération configs Talos
+│   └── talos-patches/
+│       └── gpu-worker-patch.yaml  # Patch Talos pour workers GPU
+├── kubernetes/
+│   ├── storageclass-outscale.yaml    # StorageClass CSI Outscale
+│   ├── test-csi-pvc.yaml             # Tests PVC
+│   ├── test-gpu-pod.yaml             # Tests GPU
+│   ├── install-gpu-operator.sh       # Installation GPU Operator
+│   └── setup-gpu-node.sh             # Configuration nœud GPU
+└── _out/                          # Outputs générés
     ├── talosconfig
     ├── kubeconfig
     ├── controlplane.yaml
-    └── worker.yaml
+    ├── worker.yaml
+    ├── gpu-worker.yaml            # Config worker GPU
+    ├── gpu-operator-values-clean.yaml  # Values GPU Operator
+    └── GPU-OPERATOR-INSTALL-GUIDE.md   # Guide GPU Operator
 ```
 
 ## 📚 Documentation
 
-- **Talos officiel** : https://www.talos.dev/
-- **Cilium** : https://docs.cilium.io/
-- **Terraform Outscale** : https://registry.terraform.io/providers/outscale/outscale/
-- **Article de blog** : https://blog.stephane-robert.info/docs/cloud/outscale/kubernetes-talos/
+Documentation disponible :
+
+- **Guide complet de déploiement** : [Déploiement Talos sur Outscale](https://blog.stephane-robert.info/docs/cloud/outscale/kubernetes-talos/)
+
+Ressources externes :
+
+- **Talos officiel** : <https://www.talos.dev/>
+- **Cilium** : <https://docs.cilium.io/>
+- **Terraform Outscale** : <https://registry.terraform.io/providers/outscale/outscale/>
+
+### Fonctionnalités principales
+
+#### Support GPU NVIDIA
+
+Le projet supporte le déploiement de workers GPU avec :
+
+- **Images personnalisées** : OMI Talos avec drivers NVIDIA pré-installés
+- **Extensions Talos** : nvidia-open-gpu-kernel-modules, nvidia-container-toolkit, nvidia-fabricmanager
+- **Drivers** : NVIDIA 570.x (production)
+- **Configurations** : GPU simple, multi-GPU, et systèmes HGX avec NVLink
+- **GPU Operator** : Installation et gestion automatisées des composants GPU
+
+#### CSI Driver Outscale
+
+Support du stockage persistant avec volumes BSU :
+
+- **StorageClass** : gp2, io1, standard
+- **Dynamic provisioning** : Création automatique de volumes
+- **Volume expansion** : Redimensionnement à chaud
+- **Snapshots** : Sauvegarde et restauration
+
+#### Cloud Controller Manager
+
+Intégration native avec les services Outscale :
+
+- **Load Balancers** : Création automatique de LB pour les Services Kubernetes
+- **Node management** : Synchronisation des métadonnées VM/Node
+- **Zone awareness** : Distribution multi-AZ intelligente
 
 ## 🤝 Contribution
 
@@ -304,7 +427,7 @@ Ce projet est distribué sous licence Apache 2.0. Voir le fichier [LICENSE](LICE
 
 **Stéphane Robert**
 
-- Blog: https://blog.stephane-robert.info
+- Blog: <https://blog.stephane-robert.info>
 - GitHub: [@stephrobert](https://github.com/stephrobert)
 - LinkedIn: [Stéphane Robert](https://www.linkedin.com/in/stephanerobert1/)
 
