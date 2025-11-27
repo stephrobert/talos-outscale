@@ -66,3 +66,4 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .envrc
+packer/variables.auto.pkrvars.hcl

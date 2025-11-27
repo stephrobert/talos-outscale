@@ -1,0 +1,56 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-statefulset
+  namespace: default
+spec:
+  selector:
+    app: test-statefulset
+  clusterIP: None
+  ports:
+  - port: 80
+    name: web
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-statefulset
+  namespace: default
+spec:
+  serviceName: test-statefulset
+  replicas: 3
+  selector:
+    matchLabels:
+      app: test-statefulset
+  template:
+    metadata:
+      labels:
+        app: test-statefulset
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: web
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/nginx/html
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            echo "<h1>Pod: $HOSTNAME</h1>" > /usr/share/nginx/html/index.html
+            echo "<p>Volume BSU Outscale monté avec succès</p>" >> /usr/share/nginx/html/index.html
+            echo "<p>Date: $(date)</p>" >> /usr/share/nginx/html/index.html
+            nginx -g 'daemon off;'
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: outscale-gp2
+      resources:
+        requests:
+          storage: 5Gi

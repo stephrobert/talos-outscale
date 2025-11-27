@@ -1,0 +1,11 @@
+# Patch minimal pour GPU NVIDIA sur Talos avec GPU Operator
+# Le GPU Operator gère l'installation des drivers et du runtime
+machine:
+  # Autoriser l'accès au PCIe pour le GPU
+  sysctls:
+    net.core.bpf_jit_harden: 1
+
+  # Labels pour identifier les nodes GPU
+  nodeLabels:
+    nvidia.com/gpu.present: "true"
+    gpu.nvidia.com/class: H100

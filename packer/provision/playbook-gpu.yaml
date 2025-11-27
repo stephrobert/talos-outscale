@@ -1,13 +1,22 @@
 ---
-- name: Prepare Talos image on BSU volume
+- name: Prepare Talos GPU image on BSU volume
   hosts: all
   become: true
   vars:
-    talos_version: "v1.11.5"
+    talos_version: "{{ lookup('env', 'TALOS_VERSION') | default('v1.11.5', true) }}"
+    image_type: "{{ lookup('env', 'IMAGE_TYPE') | default('universal', true) }}"
     talos_dir: /opt/talos
-    talos_xz: "{{ talos_dir }}/aws-amd64.raw.xz"
-    talos_raw: "{{ talos_dir }}/aws-amd64.raw"
+    talos_xz: "{{ talos_dir }}/nocloud-amd64.raw.xz"
+    talos_raw: "{{ talos_dir }}/nocloud-amd64.raw"
     target_device: /dev/xvdf
+    # Extensions NVIDIA selon le type d'image
+    nvidia_extensions_universal:
+      - siderolabs/nvidia-open-gpu-kernel-modules-production
+      - siderolabs/nvidia-container-toolkit-production
+      - siderolabs/nvidia-fabricmanager-production
+    nvidia_extensions_simple:
+      - siderolabs/nvidia-open-gpu-kernel-modules-production
+      - siderolabs/nvidia-container-toolkit-production
 
   tasks:
     - name: Ensure work dir
@@ -16,18 +25,41 @@
         state: directory
         mode: "0755"
 
+    - name: Set extensions based on image type
+      ansible.builtin.set_fact:
+        extensions: "{{ nvidia_extensions_universal if image_type == 'universal' else nvidia_extensions_simple }}"
+
+    - name: Create schematic YAML for GPU image
+      ansible.builtin.copy:
+        dest: "{{ talos_dir }}/schematic-gpu.yaml"
+        mode: "0644"
+        content: |
+          customization:
+            systemExtensions:
+              officialExtensions:
+          {% for ext in extensions %}
+                - {{ ext }}
+          {% endfor %}
+
+    - name: Display schematic content
+      ansible.builtin.debug:
+        msg: "Schematic créé pour type: {{ image_type }} avec {{ extensions | length }} extensions"
+
+    - name: Read schematic file content
+      ansible.builtin.slurp:
+        src: "{{ talos_dir }}/schematic-gpu.yaml"
+      register: schematic_file
+
     - name: Submit schematic to Talos Image Factory
       ansible.builtin.uri:
         url: https://factory.talos.dev/schematics
         method: POST
-        body: "{{ lookup('file', playbook_dir + '/schematic.yaml') }}"
+        body: "{{ schematic_file.content | b64decode }}"
         headers:
           Content-Type: application/yaml
         return_content: true
         status_code: 201
       register: schematic_response
-      delegate_to: localhost
-      become: false
 
     - name: Extract schematic ID from response
       ansible.builtin.set_fact:
@@ -37,9 +69,9 @@
       ansible.builtin.debug:
         msg: "Schematic ID: {{ schematic_id }}"
 
-    - name: Download Talos image from Image Factory (aws-amd64.raw.xz)
+    - name: Download Talos GPU image from Image Factory
       ansible.builtin.get_url:
-        url: "https://factory.talos.dev/image/{{ schematic_id }}/{{ talos_version }}/aws-amd64.raw.xz"
+        url: "https://factory.talos.dev/image/{{ schematic_id }}/{{ talos_version }}/nocloud-amd64.raw.xz"
         dest: "{{ talos_xz }}"
         mode: "0644"
         force: true

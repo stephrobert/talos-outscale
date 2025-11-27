@@ -16,13 +16,22 @@ data "outscale_images" "ubuntu" {
 data "outscale_images" "talos" {
   filter {
     name   = "image_names"
-    values = ["Talos-${var.talos_version}-*"]
+    values = ["Talos-v1.11.5-*"]
+  }
+}
+
+# Data source pour trouver l'image Talos GPU
+data "outscale_images" "talos_gpu" {
+  filter {
+    name   = "image_names"
+    values = ["Talos-GPU-universal-${var.talos_version}-*"]
   }
 }
 
 locals {
-  bastion_image_id = var.bastion_image_id != "" ? var.bastion_image_id : (length(data.outscale_images.ubuntu.images) > 0 ? data.outscale_images.ubuntu.images[0].image_id : "")
-  talos_image_id   = var.talos_image_id != "" ? var.talos_image_id : (length(data.outscale_images.talos.images) > 0 ? data.outscale_images.talos.images[0].image_id : "")
+  bastion_image_id    = var.bastion_image_id != "" ? var.bastion_image_id : (length(data.outscale_images.ubuntu.images) > 0 ? data.outscale_images.ubuntu.images[0].image_id : "")
+  talos_image_id      = var.talos_image_id != "" ? var.talos_image_id : (length(data.outscale_images.talos.images) > 0 ? data.outscale_images.talos.images[0].image_id : "")
+  talos_gpu_image_id  = var.talos_gpu_image_id != "" ? var.talos_gpu_image_id : (length(data.outscale_images.talos_gpu.images) > 0 ? data.outscale_images.talos_gpu.images[0].image_id : "")
 
   # Subnets pour distribution multi-AZ
   kubernetes_subnets = compact([
@@ -30,6 +39,17 @@ locals {
     var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id : "",
     var.enable_multi_az && length(outscale_subnet.kubernetes_az_c) > 0 ? outscale_subnet.kubernetes_az_c[0].subnet_id : ""
   ])
+
+  # Subnets pour workers GPU selon les AZ spécifiées
+  gpu_kubernetes_subnets = length(var.gpu_worker_availability_zones) > 0 ? [
+    for az in var.gpu_worker_availability_zones :
+    az == "a" ? outscale_subnet.kubernetes_az_a.subnet_id :
+    az == "b" && var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id :
+    az == "c" && var.enable_multi_az && length(outscale_subnet.kubernetes_az_c) > 0 ? outscale_subnet.kubernetes_az_c[0].subnet_id : ""
+  ] : local.kubernetes_subnets
+
+  # Supprimer les entrées vides
+  gpu_subnets_filtered = compact(local.gpu_kubernetes_subnets)
 }
 
 # User data pour le bastion
@@ -55,6 +75,8 @@ locals {
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
     chmod +x kubectl
     mv kubectl /usr/local/bin/
+    /usr/local/bin/kubectl completion bash > /etc/bash_completion.d/kubectl
+
 
     # Installer Helm
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -121,6 +143,7 @@ resource "outscale_vm" "bastion" {
     key   = "Role"
     value = "Bastion"
   }
+
 }
 
 # IP publique pour le bastion
@@ -199,6 +222,11 @@ resource "outscale_vm" "control_plane" {
     value = tostring(count.index + 1)
   }
 
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
   depends_on = [
     outscale_nat_service.kubernetes,
     outscale_route.kubernetes_nat
@@ -235,7 +263,7 @@ resource "outscale_vm" "workers" {
 
   tags {
     key   = "Name"
-    value = "${var.cluster_name}-worker-${count.index + 1}"
+    value = "${var.cluster_name}-worker-${count.index + 1}-cpu"
   }
 
   tags {
@@ -254,8 +282,90 @@ resource "outscale_vm" "workers" {
   }
 
   tags {
+    key   = "WorkerType"
+    value = "CPU"
+  }
+
+  tags {
     key   = "Index"
     value = tostring(count.index + 1)
+  }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
+  depends_on = [
+    outscale_nat_service.kubernetes,
+    outscale_route.kubernetes_nat
+  ]
+}
+
+# GPU Worker Nodes
+resource "outscale_vm" "gpu_workers" {
+  count = var.gpu_worker_count
+
+  image_id           = local.talos_gpu_image_id
+  vm_type            = var.gpu_worker_vm_type
+  keypair_name       = outscale_keypair.main.keypair_name
+  security_group_ids = [outscale_security_group.workers.security_group_id]
+
+  # Distribution sur les AZ spécifiées pour GPU
+  subnet_id = local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)]
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    bsu {
+      volume_size           = var.gpu_worker_disk_size
+      volume_type           = "gp2"
+      delete_on_vm_deletion = true
+    }
+  }
+
+  # IPs privées statiques (après les workers standards)
+  private_ips = [
+    cidrhost(
+      local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)] == outscale_subnet.kubernetes_az_a.subnet_id ? var.subnet_k8s_az_a_cidr :
+      local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)] == (var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id : "") ? var.subnet_k8s_az_b_cidr :
+      var.subnet_k8s_az_c_cidr,
+      30 + count.index
+    )
+  ]
+
+  tags {
+    key   = "Name"
+    value = "${var.cluster_name}-worker-${count.index + 1}-gpu"
+  }
+
+  tags {
+    key   = "Cluster"
+    value = var.cluster_name
+  }
+
+  tags {
+    key   = "Environment"
+    value = var.environment
+  }
+
+  tags {
+    key   = "Role"
+    value = "Worker"
+  }
+
+  tags {
+    key   = "WorkerType"
+    value = "GPU"
+  }
+
+  tags {
+    key   = "Index"
+    value = tostring(count.index + 1)
+  }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
   }
 
   depends_on = [

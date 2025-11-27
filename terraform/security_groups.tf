@@ -97,6 +97,18 @@ locals {
       protocol      = "tcp"
       source_sg     = "workers"
     }
+    vxlan_from_cp = {
+      from_port     = 8472
+      to_port       = 8472
+      protocol      = "udp"
+      source_sg     = "control_plane"
+    }
+    vxlan_from_workers = {
+      from_port     = 8472
+      to_port       = 8472
+      protocol      = "udp"
+      source_sg     = "workers"
+    }
   }
 
   # Règles workers depuis IP/CIDR
@@ -276,6 +288,11 @@ resource "outscale_security_group" "control_plane" {
     key   = "Role"
     value = "ControlPlane"
   }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
 }
 
 # Règles Control Plane depuis CIDR
@@ -332,6 +349,16 @@ resource "outscale_security_group" "workers" {
     key   = "Role"
     value = "Worker"
   }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
+  tags {
+    key   = "OscK8sRole/worker"
+    value = ""
+  }
 }
 
 # Règles Workers depuis CIDR
@@ -387,6 +414,11 @@ resource "outscale_security_group" "load_balancer" {
   tags {
     key   = "Role"
     value = "LoadBalancer"
+  }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
   }
 }
 

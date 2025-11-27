@@ -1,0 +1,31 @@
+# Variables Packer pour Images Talos GPU sur Outscale
+# Copier ce fichier vers variables.auto.pkrvars.hcl et ajuster les valeurs
+
+# Région Outscale
+region = "eu-west-2"
+
+# OMI Ubuntu 22.04 source (à récupérer via osc-cli)
+# Commande: osc-cli api ReadImages --Filters '{"ImageNames": ["Ubuntu-22.04-*"]}' | jq -r '.Images[0].ImageId'
+source_omi = "ami-xxxxxxxx"
+
+# Version Talos (doit correspondre à la version du cluster)
+talos_version = "v1.11.3"
+
+# Type d'image GPU
+# - "universal" : Supporte GPU simple + HGX avec NVLink (recommandé)
+# - "simple"    : Supporte GPU simple uniquement
+image_type = "universal"
+
+# Taille du volume en GB (20 GB recommandé pour Talos)
+volume_size = 20
+
+# Type de VM pour la construction (tinav6.c2r4p1 suffit)
+vm_type = "tinav6.c2r4p1"
+
+# Utilisateur SSH (ne pas modifier pour Ubuntu)
+ssh_username = "outscale"
+
+# Schematic ID (optionnel - laissez vide pour génération automatique)
+# Si vous avez déjà un Schematic ID, vous pouvez le spécifier ici
+# schematic_id = "b8e8fbbe1b610b10ab4d89a8195c32ff246deb2c22d62087fbf8dac3d159c92d"
+schematic_id = ""

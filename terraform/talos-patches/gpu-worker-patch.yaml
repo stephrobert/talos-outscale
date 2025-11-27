@@ -1,0 +1,26 @@
+machine:
+  nodeLabels:
+    node.kubernetes.io/worker-type: gpu
+    nvidia.com/gpu.present: "true"
+  kernel:
+    modules:
+      - name: nvidia
+      - name: nvidia_uvm
+      - name: nvidia_drm
+      - name: nvidia_modeset
+  sysctls:
+    net.core.bpf_jit_harden: 1
+  files:
+    - content: |
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+          privileged_without_host_devices = false
+          runtime_engine = ""
+          runtime_root = ""
+          runtime_type = "io.containerd.runc.v2"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+            BinaryName = "/usr/bin/nvidia-container-runtime"
+      path: /etc/cri/conf.d/20-nvidia.part
+      op: create
+
+cluster:
+  allowSchedulingOnControlPlanes: false

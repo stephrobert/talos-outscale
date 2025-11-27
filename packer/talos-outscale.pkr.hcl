@@ -18,7 +18,7 @@ variable "region" {
 
 variable "omi_name" {
   type    = string
-  default = "Talos-Outscale"
+  default = "Talos"
 }
 
 variable "vm_type" {
@@ -26,13 +26,23 @@ variable "vm_type" {
   default = "tinav6.c4r8p2"  # ajuster
 }
 
-variable "source_omi" {
-  type = string  # ex: une petite Ubuntu LTS
+variable "source_omi_filter" {
+  type = object({
+    filters = map(string)
+    owners  = list(string)
+  })
+  default = {
+    filters = {
+      name = "Ubuntu-22.04-*"
+    }
+    owners = ["Outscale"]
+  }
+  description = "Filtre pour selectionner automatiquement une OMI Ubuntu 22.04 comme base"
 }
 
 variable "talos_version" {
   type    = string
-  default = "v1.10.6"
+  default = "v1.11.5"
 }
 
 variable "volume_size" {
@@ -56,12 +66,16 @@ locals {
   }
 }
 
-# Builder « bsusurrogate » : il attache un volume BSU vierge, on l’approvisionne,
-# puis Packer snapshotte et enregistre l’OMI à partir de ce volume.
+# Builder « bsusurrogate » : il attache un volume BSU vierge, on l'approvisionne,
+# puis Packer snapshotte et enregistre l'OMI à partir de ce volume.
 source "outscale-bsusurrogate" "builder" {
   region     = var.region
   vm_type    = var.vm_type
-  source_omi = var.source_omi
+  source_omi_filter {
+    filters = var.source_omi_filter.filters
+    owners  = var.source_omi_filter.owners
+    most_recent = true
+  }
 
   launch_block_device_mappings {
     delete_on_vm_deletion = true
@@ -97,5 +111,14 @@ build {
     ansible_env_vars = [
       "ANSIBLE_SCP_EXTRA_ARGS=-O",
     ]
+  }
+  post-processor "manifest" {
+    output     = "manifest.json"
+    strip_path = true
+    custom_data = {
+      talos_version = var.talos_version
+      extensions    = jsonencode(local.extensions)
+      build_time    = timestamp()
+    }
   }
 }

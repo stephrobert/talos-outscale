@@ -63,6 +63,16 @@ resource "outscale_subnet" "kubernetes_az_a" {
     key   = "AZ"
     value = "a"
   }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
+  tags {
+    key   = "OscK8sRole/loadbalancer"
+    value = ""
+  }
 }
 
 resource "outscale_subnet" "kubernetes_az_b" {
@@ -90,6 +100,16 @@ resource "outscale_subnet" "kubernetes_az_b" {
   tags {
     key   = "AZ"
     value = "b"
+  }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
+  tags {
+    key   = "OscK8sRole/loadbalancer"
+    value = ""
   }
 }
 
@@ -119,6 +139,16 @@ resource "outscale_subnet" "kubernetes_az_c" {
     key   = "AZ"
     value = "c"
   }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
+  }
+
+  tags {
+    key   = "OscK8sRole/loadbalancer"
+    value = ""
+  }
 }
 
 # Subnet NAT (Public)
@@ -145,6 +175,11 @@ resource "outscale_subnet" "nat" {
   tags {
     key   = "Type"
     value = "Public"
+  }
+
+  tags {
+    key   = "OscK8sClusterID/${var.cluster_name}"
+    value = "owned"
   }
 }
 

@@ -1,0 +1,33 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: outscale-gp2
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: bsu.csi.outscale.com
+parameters:
+  type: gp2
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: outscale-io1
+provisioner: bsu.csi.outscale.com
+parameters:
+  type: io1
+  iops: "1000"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: outscale-standard
+provisioner: bsu.csi.outscale.com
+parameters:
+  type: standard
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

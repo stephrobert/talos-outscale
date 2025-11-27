@@ -1,0 +1,38 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: outscale-gp2
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-csi-pod
+  namespace: default
+spec:
+  containers:
+  - name: app
+    image: nginx:alpine
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    command: ["/bin/sh"]
+    args:
+      - -c
+      - |
+        echo "Test CSI Outscale - $(date)" > /data/test.txt
+        echo "Volume monté avec succès !" >> /data/test.txt
+        cat /data/test.txt
+        tail -f /dev/null
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: test-pvc

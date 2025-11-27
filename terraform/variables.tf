@@ -133,6 +133,47 @@ variable "worker_disk_size" {
   default     = 100
 }
 
+# GPU Worker Configuration
+variable "gpu_worker_count" {
+  description = "Nombre de worker nodes GPU"
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.gpu_worker_count >= 0 && var.gpu_worker_count <= 10
+    error_message = "Le nombre de workers GPU doit être entre 0 et 10."
+  }
+}
+
+variable "gpu_worker_vm_type" {
+  description = "Type de VM pour workers GPU (ex: tinav6.c8r16p1g1, tinav6.c16r32p1g2)"
+  type        = string
+  default     = "tinav6.c8r16p1g1" # 8 vCPU, 16GB RAM, 1 GPU
+}
+
+variable "gpu_worker_disk_size" {
+  description = "Taille du disque pour workers GPU (GB)"
+  type        = number
+  default     = 200
+}
+
+variable "gpu_worker_availability_zones" {
+  description = "Liste des zones de disponibilité pour les workers GPU (ex: ['a'], ['b', 'c']). Si vide, utilise les mêmes AZ que les workers standards"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for az in var.gpu_worker_availability_zones : contains(["a", "b", "c"], az)])
+    error_message = "Les zones de disponibilité doivent être parmi 'a', 'b', 'c'."
+  }
+}
+
+variable "talos_gpu_image_id" {
+  description = "ID de l'OMI Talos GPU (laisser vide pour auto-détection)"
+  type        = string
+  default     = ""
+}
+
 # Bastion Configuration
 variable "bastion_vm_type" {
   description = "Type de VM pour le bastion"
