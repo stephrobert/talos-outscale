@@ -134,37 +134,24 @@ variable "worker_disk_size" {
 }
 
 # GPU Worker Configuration
-variable "gpu_worker_count" {
-  description = "Nombre de worker nodes GPU"
-  type        = number
-  default     = 0
+variable "gpu_workers" {
+  description = "Liste des workers GPU avec leur configuration individuelle"
+  type = list(object({
+    vm_type        = string
+    disk_size      = number
+    availability_zone = string
+    gpu_model      = string
+  }))
+  default = []
 
   validation {
-    condition     = var.gpu_worker_count >= 0 && var.gpu_worker_count <= 10
-    error_message = "Le nombre de workers GPU doit être entre 0 et 10."
-  }
-}
-
-variable "gpu_worker_vm_type" {
-  description = "Type de VM pour workers GPU (ex: tinav6.c8r16p1g1, tinav6.c16r32p1g2)"
-  type        = string
-  default     = "tinav6.c8r16p1g1" # 8 vCPU, 16GB RAM, 1 GPU
-}
-
-variable "gpu_worker_disk_size" {
-  description = "Taille du disque pour workers GPU (GB)"
-  type        = number
-  default     = 200
-}
-
-variable "gpu_worker_availability_zones" {
-  description = "Liste des zones de disponibilité pour les workers GPU (ex: ['a'], ['b', 'c']). Si vide, utilise les mêmes AZ que les workers standards"
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition     = alltrue([for az in var.gpu_worker_availability_zones : contains(["a", "b", "c"], az)])
+    condition     = alltrue([for w in var.gpu_workers : contains(["a", "b", "c"], w.availability_zone)])
     error_message = "Les zones de disponibilité doivent être parmi 'a', 'b', 'c'."
+  }
+
+  validation {
+    condition     = alltrue([for w in var.gpu_workers : contains(["nvidia-t4", "nvidia-a100", "nvidia-v100", "nvidia-h100"], w.gpu_model)])
+    error_message = "Les modèles de GPU doivent être parmi nvidia-t4, nvidia-a100, nvidia-v100, nvidia-h100."
   }
 }
 

@@ -37,7 +37,7 @@ output "gpu_worker_ips" {
 }
 
 output "gpu_worker_count" {
-  description = "Nombre de workers GPU déployés"
-  value       = var.gpu_worker_count
+  description = "Nombre de workers GPU"
+  value       = length(var.gpu_workers)
 }
 

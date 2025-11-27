@@ -40,16 +40,25 @@ locals {
     var.enable_multi_az && length(outscale_subnet.kubernetes_az_c) > 0 ? outscale_subnet.kubernetes_az_c[0].subnet_id : ""
   ])
 
-  # Subnets pour workers GPU selon les AZ spécifiées
-  gpu_kubernetes_subnets = length(var.gpu_worker_availability_zones) > 0 ? [
-    for az in var.gpu_worker_availability_zones :
-    az == "a" ? outscale_subnet.kubernetes_az_a.subnet_id :
-    az == "b" && var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id :
-    az == "c" && var.enable_multi_az && length(outscale_subnet.kubernetes_az_c) > 0 ? outscale_subnet.kubernetes_az_c[0].subnet_id : ""
-  ] : local.kubernetes_subnets
+  # Map des AZ vers les subnet IDs
+  az_to_subnet = {
+    "a" = outscale_subnet.kubernetes_az_a.subnet_id
+    "b" = var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id : ""
+    "c" = var.enable_multi_az && length(outscale_subnet.kubernetes_az_c) > 0 ? outscale_subnet.kubernetes_az_c[0].subnet_id : ""
+  }
 
-  # Supprimer les entrées vides
-  gpu_subnets_filtered = compact(local.gpu_kubernetes_subnets)
+  # Map des AZ vers les CIDR
+  az_to_cidr = {
+    "a" = var.subnet_k8s_az_a_cidr
+    "b" = var.subnet_k8s_az_b_cidr
+    "c" = var.subnet_k8s_az_c_cidr
+  }
+
+  # Extraire la génération depuis le vm_type (ex: tinav6.c8r16p1g1 -> v6)
+  gpu_generations = [
+    for worker in var.gpu_workers :
+    "v${regex("tinav([0-9]+)", worker.vm_type)[0]}"
+  ]
 }
 
 # User data pour le bastion
@@ -304,20 +313,20 @@ resource "outscale_vm" "workers" {
 
 # GPU Worker Nodes
 resource "outscale_vm" "gpu_workers" {
-  count = var.gpu_worker_count
+  count = length(var.gpu_workers)
 
   image_id           = local.talos_gpu_image_id
-  vm_type            = var.gpu_worker_vm_type
+  vm_type            = var.gpu_workers[count.index].vm_type
   keypair_name       = outscale_keypair.main.keypair_name
   security_group_ids = [outscale_security_group.workers.security_group_id]
 
-  # Distribution sur les AZ spécifiées pour GPU
-  subnet_id = local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)]
+  # Subnet selon l'AZ spécifiée
+  subnet_id = local.az_to_subnet[var.gpu_workers[count.index].availability_zone]
 
   block_device_mappings {
     device_name = "/dev/sda1"
     bsu {
-      volume_size           = var.gpu_worker_disk_size
+      volume_size           = var.gpu_workers[count.index].disk_size
       volume_type           = "gp2"
       delete_on_vm_deletion = true
     }
@@ -326,9 +335,7 @@ resource "outscale_vm" "gpu_workers" {
   # IPs privées statiques (après les workers standards)
   private_ips = [
     cidrhost(
-      local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)] == outscale_subnet.kubernetes_az_a.subnet_id ? var.subnet_k8s_az_a_cidr :
-      local.gpu_subnets_filtered[count.index % length(local.gpu_subnets_filtered)] == (var.enable_multi_az && length(outscale_subnet.kubernetes_az_b) > 0 ? outscale_subnet.kubernetes_az_b[0].subnet_id : "") ? var.subnet_k8s_az_b_cidr :
-      var.subnet_k8s_az_c_cidr,
+      local.az_to_cidr[var.gpu_workers[count.index].availability_zone],
       30 + count.index
     )
   ]
@@ -372,4 +379,22 @@ resource "outscale_vm" "gpu_workers" {
     outscale_nat_service.kubernetes,
     outscale_route.kubernetes_nat
   ]
+}
+
+# Flexible GPU pour workers GPU
+resource "outscale_flexible_gpu" "gpu_workers" {
+  count = length(var.gpu_workers)
+
+  model_name            = var.gpu_workers[count.index].gpu_model
+  generation            = local.gpu_generations[count.index]
+  subregion_name        = "${var.region}${var.gpu_workers[count.index].availability_zone}"
+  delete_on_vm_deletion = true
+}
+
+# Link GPU to VM
+resource "outscale_flexible_gpu_link" "gpu_workers" {
+  count = length(var.gpu_workers)
+
+  flexible_gpu_id = outscale_flexible_gpu.gpu_workers[count.index].flexible_gpu_id
+  vm_id           = outscale_vm.gpu_workers[count.index].vm_id
 }
