@@ -35,8 +35,7 @@ Ce projet construis une infrastructure complète pour exécuter Kubernetes sur O
       * [Image Talos GPU (optionnel)](#image-talos-gpu-optionnel)
     * [3. Déploiement de l'infrastructure](#3-déploiement-de-linfrastructure)
     * [4. Déploiement du cluster Kubernetes](#4-déploiement-du-cluster-kubernetes)
-  * [📁 Structure du projet](#-structure-du-projet)
-  * [📚 Documentation](#-documentation)
+  * [� Documentation](#-documentation)
     * [Fonctionnalités principales](#fonctionnalités-principales)
       * [Support GPU NVIDIA](#support-gpu-nvidia)
       * [CSI Driver Outscale](#csi-driver-outscale)
@@ -311,55 +310,6 @@ Ce guide détaille :
 - Le troubleshooting
 
 🎉 **Votre cluster Kubernetes Talos sera opérationnel !**
-
-## 📁 Structure du projet
-
-```text
-.
-├── README.md                      # Ce fichier
-├── docs/
-│   └── PROCEDURE-IMAGE-TALOS-GPU.md  # Guide détaillé création images GPU
-├── .envrc.sample                  # Template de credentials
-├── cilium-patch.yaml              # Patch Talos pour désactiver kube-proxy
-├── packer/
-│   ├── talos-outscale.pkr.hcl        # Configuration Packer image standard
-│   ├── talos-gpu-outscale.pkr.hcl    # Configuration Packer image GPU
-│   ├── variables.auto.pkrvars.hcl.example  # Variables Packer
-│   ├── manifest.json                 # Manifest build image standard
-│   ├── manifest-gpu-universal.json   # Manifest build image GPU
-│   └── provision/
-│       ├── playbook.yaml          # Playbook Ansible image standard
-│       ├── playbook-gpu.yaml      # Playbook Ansible image GPU
-│       └── schematic.yaml         # Schematic Talos (extensions)
-├── terraform/
-│   ├── main.tf                    # Configuration Terraform principale
-│   ├── variables.tf               # Variables (inclut GPU)
-│   ├── outputs.tf                 # Outputs (inclut GPU workers)
-│   ├── network.tf                 # Configuration réseau
-│   ├── compute.tf                 # VMs Talos (CP, workers, GPU workers)
-│   ├── security_groups.tf         # Security Groups
-│   ├── load_balancer.tf           # Load Balancer API Kubernetes
-│   ├── keypair.tf                 # Paire de clés SSH
-│   ├── terraform.tfvars.example   # Exemple de variables
-│   ├── deploy-cluster.sh          # Script automatisé déploiement complet
-│   ├── generate-talos-config.sh   # Script génération configs Talos
-│   └── talos-patches/
-│       └── gpu-worker-patch.yaml  # Patch Talos pour workers GPU
-├── kubernetes/
-│   ├── storageclass-outscale.yaml    # StorageClass CSI Outscale
-│   ├── test-csi-pvc.yaml             # Tests PVC
-│   ├── test-gpu-pod.yaml             # Tests GPU
-│   ├── install-gpu-operator.sh       # Installation GPU Operator
-│   └── setup-gpu-node.sh             # Configuration nœud GPU
-└── _out/                          # Outputs générés
-    ├── talosconfig
-    ├── kubeconfig
-    ├── controlplane.yaml
-    ├── worker.yaml
-    ├── gpu-worker.yaml            # Config worker GPU
-    ├── gpu-operator-values-clean.yaml  # Values GPU Operator
-    └── GPU-OPERATOR-INSTALL-GUIDE.md   # Guide GPU Operator
-```
 
 ## 📚 Documentation
 
